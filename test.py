@@ -3,6 +3,8 @@ import datetime
 import functools
 import unittest
 
+from pyparsing import basestring
+
 import api
 
 
@@ -28,10 +30,11 @@ class TestSuite(unittest.TestCase):
 
     def set_valid_auth(self, request):
         if request.get("login") == api.ADMIN_LOGIN:
-            request["token"] = hashlib.sha512(datetime.datetime.now().strftime("%Y%m%d%H") + api.ADMIN_SALT).hexdigest()
+            auth = datetime.datetime.now().strftime("%Y%m%d%H") + api.ADMIN_SALT
+            request["token"] = hashlib.sha512(auth.encode("utf-8")).hexdigest()
         else:
-            msg = request.get("account", "") + request.get("login", "") + api.SALT
-            request["token"] = hashlib.sha512(msg).hexdigest()
+            auth = request.get("account", "") + request.get("login", "") + api.SALT
+            request["token"] = hashlib.sha512(auth.encode("utf-8")).hexdigest()
 
     def test_empty_request(self):
         _, code = self.get_response({})
@@ -68,7 +71,7 @@ class TestSuite(unittest.TestCase):
         {"phone": "79175002040", "email": "stupnikov@otus.ru", "gender": 1, "birthday": "XXX"},
         {"phone": "79175002040", "email": "stupnikov@otus.ru", "gender": 1, "birthday": "01.01.2000", "first_name": 1},
         {"phone": "79175002040", "email": "stupnikov@otus.ru", "gender": 1, "birthday": "01.01.2000",
-         "first_name": "s", "last_name": 2},
+        "first_name": "s", "last_name": 2},
         {"phone": "79175002040", "birthday": "01.01.2000", "first_name": "s"},
         {"email": "stupnikov@otus.ru", "gender": 1, "last_name": 2},
     ])
