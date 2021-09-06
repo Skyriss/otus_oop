@@ -37,6 +37,22 @@ GENDERS = {
     FEMALE: "female",
 }
 
+class FieldEmptyValueError(Exception):
+
+    def __init__(self, field_name, message="Field '{}' cannot have empty value"):
+        self.message = message.format(field_name)
+        super().__init__(self.message)
+
+class FieldMissingError(Exception):
+
+    def __init__(self, field_name, message="Field '{}' is required"):
+        self.message = message.format(field_name)
+        super().__init__(self.message)
+
+class FieldValidationError(Exception):
+
+    def __init__(self, message="Validation failed"):
+        super().__init__(message)
 
 class Field:
     _type = None
@@ -51,12 +67,12 @@ class Field:
 
     def __set__(self, owner, value):
         if self.required and value is None:
-            raise AttributeError("Field '{}' is required".format(self._name))
+            raise FieldMissingError("Field '{}' is required".format(self._name))
         if not self.nullable and not value:
-            raise ValueError("Field '{}' cannot have empty value".format(self._name))
+            raise FieldEmptyValueError(self._name)
         if value:
             if not isinstance(value, self._type):
-                raise ValueError("Field '{}' must be '{}', but got '{}'".format(
+                raise FieldValidationError("Field '{}' must be '{}', but got '{}'".format(
                     self._name,
                     self._type,
                     type(value)
@@ -84,7 +100,7 @@ class EmailField(CharField):
 
     def _validate(self, value):
         if '@' not in value or '.' not in value:
-            raise ValueError("Email must contain '@' and '.' symbols")
+            raise FieldValidationError("Email must contain '@' and '.' symbols")
 
 
 class PhoneField(Field):
@@ -93,30 +109,34 @@ class PhoneField(Field):
     def _validate(self, value):
         value = str(value)
         if len(value) != 11:
-            raise ValueError("Phone number must be 11 digits long")
+            raise FieldValidationError("Phone number must be 11 digits long")
         if not value.startswith("7"):
-            raise ValueError("Phone number must start with '7'")
+            raise FieldValidationError("Phone number must start with '7'")
         if not value.isdigit():
-            raise ValueError("Phone number must contain only digits")
+            raise FieldValidationError("Phone number must contain only digits")
 
 
 class DateField(Field):
     _type = str
 
     def _validate(self, value):
-        _ = datetime.datetime.strptime(value, "%d.%m.%Y")
+        try:
+            _ = datetime.datetime.strptime(value, "%d.%m.%Y")
+        except ValueError:
+            raise FieldValidationError("Expected '13.01.2001' date format")
 
 
 class BirthDayField(DateField):
     _type = str
 
     def _validate(self, value):
+        super()._validate(value)
         bday_year = datetime.datetime.strptime(value, "%d.%m.%Y").year
         diff = datetime.datetime.now().year - bday_year
         if diff <= 0:
-            raise ValueError("Birthday is too close")
+            raise FieldValidationError("Birthday is too close")
         if diff >= 70:
-            raise ValueError("Bithday is too far away")
+            raise FieldValidationError("Bithday is too far away")
 
 
 class GenderField(Field):
@@ -124,7 +144,7 @@ class GenderField(Field):
 
     def _validate(self, value):
         if value not in GENDERS:
-            raise ValueError("Gender must be one of '{}', but got '{}'".format(GENDERS, value))
+            raise FieldValidationError("Gender must be one of '{}', but got '{}'".format(GENDERS, value))
 
 
 class ClientIDsField(Field):
@@ -132,7 +152,7 @@ class ClientIDsField(Field):
 
     def _validate(self, value):
         if not all([isinstance(item, int) for item in value]):
-            raise ValueError("ClientIDs must be list of int")
+            raise FieldValidationError("ClientIDs must be list of int")
 
 
 class Request:
@@ -169,7 +189,7 @@ class OnlineScoreRequest(Request):
             self.first_name and self.last_name,
             self.gender is not None and self.birthday
         ]):
-            raise AttributeError("any of pairs expected: 'phone/email', 'first name/last name', 'gender/birthday'")
+            raise FieldValidationError("any of pairs expected: 'phone/email', 'first name/last name', 'gender/birthday'")
 
 class MethodRequest(Request):
     account = CharField(required=False, nullable=True)
@@ -230,7 +250,7 @@ def method_handler(request, ctx, store):
         if not check_auth(method_request):
             return "Auth failed", FORBIDDEN
         response, code = methods[method_request.method](method_request, ctx, store)
-    except (AttributeError, ValueError, TypeError) as err:
+    except (FieldValidationError, FieldMissingError, FieldEmptyValueError) as err:
         error_message = "Sorry, your request contains errors: {}".format(err)
         return error_message, INVALID_REQUEST
     return response, code
